@@ -4,8 +4,8 @@ from dateutil import tz
 import datetime
 from country_codes import country_code_dict
 
-ahrefs_api_key = st.secrets["AHREFS_API_KEY"]
-semrush_api_key = st.secrets["SEMRUSH_API_KEY"]
+AHREFS_API_KEY = st.secrets["AHREFS_API_KEY"]
+SEMRUSH_API_KEY = st.secrets["SEMRUSH_API_KEY"]
 
 def fetch_ahrefs_volume_data(keyword: str, country: str = "us", year: int = None):
     url = "https://api.ahrefs.com/v3/keywords-explorer/overview"
