@@ -183,7 +183,7 @@ def enhance_csv_with_detailed_volume(keywords, combined_data, data_sources, outp
             keyword_data['Average Monthly Search in Date Range'] = average_monthly_search
 
             # Calculate the average monthly % change rounded to the nearest whole number and formatted as percentage
-            avg_monthly_pct_change = (calculate_monthly_percentage_change(monthly_volumes)
+            avg_monthly_pct_change = calculate_monthly_percentage_change(monthly_volumes)
             keyword_data['Average Monthly % Change'] = f"{avg_monthly_pct_change}%"
 
         rows_list.append(keyword_data)
