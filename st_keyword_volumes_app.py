@@ -8,7 +8,7 @@ from country_codes import country_code_dict  # Import country codes
 
 # Load secrets
 SEMRUSH_API_URL = 'https://api.semrush.com'
-#SEMRUSH_API_KEY = st.secrets["SEMRUSH_API_KEY"]  # Use Streamlit secrets management
+SEMRUSH_API_KEY = st.secrets["SEMRUSH_API_KEY"]  # Use Streamlit secrets management
 
 # Set page configuration
 st.set_page_config(page_title="Keyword Data Fetcher")
