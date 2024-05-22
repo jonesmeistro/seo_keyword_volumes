@@ -6,6 +6,7 @@ from dateutil.relativedelta import relativedelta
 from io import StringIO
 from country_codes import country_code_dict  # Import country codes
 
+
 # Load secrets
 SEMRUSH_API_KEY = st.secrets["SEMRUSH_API_KEY"]  # Use Streamlit secrets management
 AHREFS_API_KEY = st.secrets["AHREFS_API_KEY"]  # Use Streamlit secrets management
@@ -90,6 +91,7 @@ def fetch_ahrefs_overview_data(keyword, country):
     response = requests.get(AHREFS_OVERVIEW_API_URL, headers=headers, params=params)
     if response.status_code == 200:
         data = response.json()
+        print(data)
         if 'keywords' in data:
             return data['keywords'][0]
         else:
@@ -119,6 +121,7 @@ def fetch_ahrefs_history_data(keyword, country, start_date, end_date, fetch_last
     response = requests.get(AHREFS_HISTORY_API_URL, headers=headers, params=params)
     if response.status_code == 200:
         data = response.json()
+        print(data)
         monthly_data = []
         for metric in data['metrics']:
             date_str = datetime.strptime(metric['date'], '%Y-%m-%dT%H:%M:%SZ').strftime('%b-%Y')
@@ -127,7 +130,6 @@ def fetch_ahrefs_history_data(keyword, country, start_date, end_date, fetch_last
     else:
         st.error(f"API request failed with status {response.status_code} and message: {response.text}")
         return pd.DataFrame()
-
 
 # Streamlit UI
 st.title("Keyword Data Fetcher")
@@ -169,9 +171,9 @@ if submit_button:
                 if 'Trends' in df_semrush.columns:
                     df_semrush['Trends'] = df_semrush['Trends'].str.strip()
                     monthly_df = df_semrush.apply(lambda row: calculate_monthly_volumes(row, end_date), axis=1)
-                    combined_df = pd.concat([df_semrush, monthly_df], axis=1)
-                    combined_df['Datasource'] = 'SEMrush'
-                    dataframes.append(combined_df)
+                    df_semrush = pd.concat([df_semrush, monthly_df], axis=1)
+                    df_semrush['Datasource'] = 'SEMrush'
+                    dataframes.append(df_semrush)
                 else:
                     st.warning(f"Skipping keyword '{keyword}' as 'Trends' column is missing.")
             else:
@@ -181,7 +183,7 @@ if submit_button:
             if 'semrush' in datasources:
                 df_ahrefs_history = fetch_ahrefs_history_data(keyword, selected_country_code, start_date, end_date, fetch_last_12_months=True)
                 ahrefs_overview_data = fetch_ahrefs_overview_data(keyword, selected_country_code)
-                date_columns = [datetime.strptime(col, '%b-%Y').strftime('%b-%Y') for col in combined_df.columns if col not in ['Keyword', 'Search Volume', 'CPC', 'Competition', 'Number of Results', 'Trends', 'Datasource']]
+                date_columns = [datetime.strptime(col, '%b-%Y').strftime('%b-%Y') for col in df_semrush.columns if col not in ['Keyword', 'Search Volume', 'CPC', 'Competition', 'Number of Results', 'Trends', 'Datasource']]
             else:
                 df_ahrefs_history = fetch_ahrefs_history_data(keyword, selected_country_code, start_date, end_date)
                 ahrefs_overview_data = fetch_ahrefs_overview_data(keyword, selected_country_code)
@@ -202,11 +204,20 @@ if submit_button:
                     if ahrefs_row['Month-Year'] in date_columns:
                         row_ahrefs[ahrefs_row['Month-Year']] = ahrefs_row['Volume']
                 combined_df = pd.concat([combined_df, pd.DataFrame([row_ahrefs])], ignore_index=True)
-
-                if 'semrush' in datasources:
-                    dataframes.append(combined_df)
-                else:
-                    dataframes.append(combined_df)
+            else:
+                row_ahrefs = {
+                    'Keyword': keyword,
+                    'Search Volume': ahrefs_overview_data.get('volume', ''),
+                    'CPC': ahrefs_overview_data.get('cpc', ''),
+                    'Global Volume': ahrefs_overview_data.get('global_volume', ''),
+                    'Parent Volume': ahrefs_overview_data.get('parent_volume', ''),
+                    'Datasource': 'Ahrefs'
+                }
+                for date_col in date_columns:
+                    row_ahrefs[date_col] = 0  # Or some default value if no historical data available
+                combined_df = pd.concat([combined_df, pd.DataFrame([row_ahrefs])], ignore_index=True)
+            
+            dataframes.append(combined_df)
 
     if dataframes:
         final_df = pd.concat(dataframes, ignore_index=True)
