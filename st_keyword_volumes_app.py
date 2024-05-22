@@ -7,8 +7,13 @@ from io import StringIO
 from country_codes import country_code_dict  # Import country codes
 
 # Load secrets
-SEMRUSH_API_URL = 'https://api.semrush.com'
 SEMRUSH_API_KEY = st.secrets["SEMRUSH_API_KEY"]  # Use Streamlit secrets management
+AHREFS_API_KEY = st.secrets["AHREFS_API_KEY"]  # Use Streamlit secrets management
+
+SEMRUSH_API_URL = 'https://api.semrush.com'
+AHREFS_OVERVIEW_API_URL = "https://api.ahrefs.com/v3/keywords-explorer/overview"
+AHREFS_HISTORY_API_URL = "https://api.ahrefs.com/v3/keywords-explorer/volume-history"
+
 
 # Set page configuration
 st.set_page_config(page_title="Keyword Data Fetcher")
@@ -33,7 +38,7 @@ country_list = priority_countries + sorted_countries
 # Functions
 def fetch_semrush_data(keyword, database, display_date=None):
     """Fetch keyword volume data from SEMrush."""
-    semrush_database = database.lower()  # Convert database code to lowercase
+    semrush_database = database.lower()
     params = {
         'type': 'phrase_this',
         'key': SEMRUSH_API_KEY,
@@ -47,7 +52,7 @@ def fetch_semrush_data(keyword, database, display_date=None):
     if response.status_code == 200:
         lines = response.text.strip().split('\n')
         headers = lines[0].strip().split(';')
-        headers = [header.strip() for header in headers]  # Clean up headers
+        headers = [header.strip() for header in headers]
         data = [dict(zip(headers, line.strip().split(';'))) for line in lines[1:]]
         return pd.DataFrame(data)
     else:
@@ -70,19 +75,59 @@ def calculate_monthly_volumes(row, end_date):
 
     return pd.Series(monthly_volumes, index=month_year_columns)
 
-def simulate_ahrefs_data(keyword, start_date, end_date):
-    """Simulate fetching historical data from Ahrefs."""
-    simulated_data = {}
-    current_date = start_date
-    while current_date <= end_date:
-        date_str = f"{current_date:%b-%Y}"
-        simulated_data[date_str] = f"simulated_data_for_{keyword}_{date_str}"
-        current_date += relativedelta(months=1)
-    return pd.Series(simulated_data)
+def fetch_ahrefs_overview_data(keyword, country):
+    """Fetch keyword overview data from Ahrefs."""
+    headers = {
+        'Authorization': 'Bearer ' + AHREFS_API_KEY,
+        'Accept': 'application/json'
+    }
+    params = {
+        'keywords': keyword,
+        'country': country.lower(),
+        'output': 'json',
+        'select': 'volume,cpc,global_volume,parent_volume'
+    }
+    response = requests.get(AHREFS_OVERVIEW_API_URL, headers=headers, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        if 'keywords' in data:
+            return data['keywords'][0]
+        else:
+            return {}
+    else:
+        st.error(f"API request failed with status {response.status_code} and message: {response.text}")
+        return {}
 
-def simulate_ahrefs_data_last_12_months(keyword, end_date):
-    """Simulate fetching historical data from Ahrefs for the last 12 months."""
-    return simulate_ahrefs_data(keyword, end_date - relativedelta(months=11), end_date)
+def fetch_ahrefs_history_data(keyword, country, start_date, end_date, fetch_last_12_months=False):
+    """Fetch historical keyword volume data from Ahrefs."""
+    headers = {
+        'Authorization': 'Bearer ' + AHREFS_API_KEY,
+        'Accept': 'application/json'
+    }
+    if fetch_last_12_months:
+        end_date = datetime.today()
+        start_date = end_date - relativedelta(months=11)
+    
+    params = {
+        'country': country.lower(),
+        'keyword': keyword,
+        'output': 'json',
+        'start_date': start_date.strftime('%Y-%m-%d'),
+        'end_date': end_date.strftime('%Y-%m-%d')
+    }
+    
+    response = requests.get(AHREFS_HISTORY_API_URL, headers=headers, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        monthly_data = []
+        for metric in data['metrics']:
+            date_str = datetime.strptime(metric['date'], '%Y-%m-%dT%H:%M:%SZ').strftime('%b-%Y')
+            monthly_data.append({'Month-Year': date_str, 'Volume': metric['volume']})
+        return pd.DataFrame(monthly_data)
+    else:
+        st.error(f"API request failed with status {response.status_code} and message: {response.text}")
+        return pd.DataFrame()
+
 
 # Streamlit UI
 st.title("Keyword Data Fetcher")
@@ -104,7 +149,6 @@ if submit_button:
     if datasource_ah:
         datasources.append('ahrefs')
     
-    # Map selected country name to code
     selected_country_code = [code for code, name in country_list if name == selected_country][0]
     semrush_selected_country_code = [code for code, name in country_list if name == selected_country][0]
     if selected_country_code == "GB":
@@ -116,6 +160,8 @@ if submit_button:
     dataframes = []
 
     for keyword in keywords:
+        combined_df = pd.DataFrame()
+        
         if 'semrush' in datasources:
             df_semrush = fetch_semrush_data(keyword.strip(), database=semrush_selected_country_code, display_date=end_date.strftime("%Y%m15"))
             if not df_semrush.empty:
@@ -133,20 +179,34 @@ if submit_button:
 
         if 'ahrefs' in datasources:
             if 'semrush' in datasources:
-                df_ahrefs = simulate_ahrefs_data_last_12_months(keyword.strip(), end_date)
+                df_ahrefs_history = fetch_ahrefs_history_data(keyword, selected_country_code, start_date, end_date, fetch_last_12_months=True)
+                ahrefs_overview_data = fetch_ahrefs_overview_data(keyword, selected_country_code)
+                date_columns = [datetime.strptime(col, '%b-%Y').strftime('%b-%Y') for col in combined_df.columns if col not in ['Keyword', 'Search Volume', 'CPC', 'Competition', 'Number of Results', 'Trends', 'Datasource']]
             else:
-                df_ahrefs = simulate_ahrefs_data(keyword.strip(), start_date, end_date)
-            
-            if not df_ahrefs.empty:
-                df_ahrefs = df_ahrefs.to_frame().T
-                df_ahrefs['Keyword'] = keyword.strip()
-                df_ahrefs['Search Volume'] = ''
-                df_ahrefs['CPC'] = ''
-                df_ahrefs['Competition'] = ''
-                df_ahrefs['Number of Results'] = ''
-                df_ahrefs['Datasource'] = 'Ahrefs'
-                df_ahrefs = df_ahrefs[['Keyword', 'Search Volume', 'CPC', 'Competition', 'Number of Results', 'Datasource'] + list(df_ahrefs.columns[:-6])]
-                dataframes.append(df_ahrefs)
+                df_ahrefs_history = fetch_ahrefs_history_data(keyword, selected_country_code, start_date, end_date)
+                ahrefs_overview_data = fetch_ahrefs_overview_data(keyword, selected_country_code)
+                dates = [start_date + relativedelta(months=i) for i in range((end_date.year - start_date.year) * 12 + end_date.month - start_date.month + 1)]
+                date_columns = [date.strftime('%b-%Y') for date in dates]
+                combined_df = pd.DataFrame(columns=['Keyword', 'Search Volume', 'CPC', 'Global Volume', 'Parent Volume'] + date_columns)
+
+            if not df_ahrefs_history.empty:
+                row_ahrefs = {
+                    'Keyword': keyword,
+                    'Search Volume': ahrefs_overview_data.get('volume', ''),
+                    'CPC': ahrefs_overview_data.get('cpc', ''),
+                    'Global Volume': ahrefs_overview_data.get('global_volume', ''),
+                    'Parent Volume': ahrefs_overview_data.get('parent_volume', ''),
+                    'Datasource': 'Ahrefs'
+                }
+                for _, ahrefs_row in df_ahrefs_history.iterrows():
+                    if ahrefs_row['Month-Year'] in date_columns:
+                        row_ahrefs[ahrefs_row['Month-Year']] = ahrefs_row['Volume']
+                combined_df = pd.concat([combined_df, pd.DataFrame([row_ahrefs])], ignore_index=True)
+
+                if 'semrush' in datasources:
+                    dataframes.append(combined_df)
+                else:
+                    dataframes.append(combined_df)
 
     if dataframes:
         final_df = pd.concat(dataframes, ignore_index=True)
@@ -162,3 +222,4 @@ if submit_button:
         )
     else:
         st.error('No data available for the provided criteria.')
+
