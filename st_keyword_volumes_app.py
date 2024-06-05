@@ -135,7 +135,7 @@ def fetch_ahrefs_history_data(keyword, country, start_date, end_date, fetch_last
 st.title("Keyword Data Fetcher")
 
 with st.form(key='keyword_form'):
-    keyword = st.text_input("Keywords (comma-separated):")
+    keywords = st.text_area("Keywords (one per line):")
     selected_country = st.selectbox("Country:", [name for _, name in country_list])
     datasource_se = st.checkbox("SEMrush", value=True)
     datasource_ah = st.checkbox("Ahrefs", value=True)
@@ -144,7 +144,8 @@ with st.form(key='keyword_form'):
     submit_button = st.form_submit_button(label='Fetch Data')
 
 if submit_button:
-    keywords = [k.strip() for k in keyword.split(',')]
+    # Split the keywords by new lines and remove any extra whitespace
+    keywords = [k.strip() for k in keywords.split('\n') if k.strip()]
     datasources = []
     if datasource_se:
         datasources.append('semrush')
